@@ -81,7 +81,7 @@ Outputs:
 ## Installation
 
 ### Option A) Install from source (recommended for development)
-```bash
+
 git clone https://github.com/<YOUR_USER>/xai-moe-audio.git
 cd xai-moe-audio
 pip install -e ".[dev]"
