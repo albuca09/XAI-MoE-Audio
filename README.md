@@ -85,3 +85,231 @@ Outputs:
 git clone https://github.com/<YOUR_USER>/xai-moe-audio.git
 cd xai-moe-audio
 pip install -e ".[dev]"
+
+### Option B) Future PyPI release
+
+    pip install xai-moe-audio
+
+---
+
+## Dataset Format
+
+Minimal expected structure:
+
+    dataset/
+      train/
+        *.wav
+      val/
+        *.wav
+      test/
+        *.wav
+      metadata.csv
+
+Minimal `metadata.csv` format:
+
+    filepath,split,label
+    train/a.wav,train,car
+    train/b.wav,train,dog
+    val/c.wav,val,dog
+    test/d.wav,test,car
+
+Notes:
+- `filepath` is relative to dataset root
+- `split` is one of: `train`, `val`, `test`
+- `label` can be a string name (auto-mapped to ids)
+
+---
+
+## Quickstart (Python API)
+
+### Train
+
+    from xaimoe_audio import MoEAudioClassifier
+
+    clf = MoEAudioClassifier(
+        task="single_label",       # or "multi_label"
+        budget="accuracy",         # or "latency"
+        auto_config=True,          # profiler + policy engine
+        explainability="gradcam",  # optional human explanation
+        device="cuda",
+    )
+
+    clf.fit(
+        dataset_dir="dataset",
+        metadata_csv="dataset/metadata.csv",
+        epochs=20,
+        batch_size=16,
+        out_dir="runs/exp1",
+    )
+
+    clf.print_architecture()
+    clf.print_expert_usage()
+
+### Evaluate
+
+    metrics = clf.evaluate(
+        dataset_dir="dataset",
+        metadata_csv="dataset/metadata.csv",
+        split="test",
+    )
+    print(metrics)
+
+### Inference (single file)
+
+    pred = clf.predict("dataset/test/d.wav")
+    print(pred)
+
+### Explainability (Grad-CAM)
+
+    out = clf.explain(
+        audio_path="dataset/test/d.wav",
+        method="gradcam",
+        save_dir="runs/exp1/explain",
+    )
+    print(out)
+
+---
+
+## CLI Usage
+
+After install:
+
+Train:
+
+    xaimoe-audio train --dataset dataset --metadata dataset/metadata.csv --epochs 20 --batch-size 16 --out runs/exp1
+
+Evaluate:
+
+    xaimoe-audio eval --dataset dataset --metadata dataset/metadata.csv --split test --ckpt runs/exp1/best.pt
+
+Infer:
+
+    xaimoe-audio infer --audio dataset/test/d.wav --ckpt runs/exp1/best.pt
+
+Explain:
+
+    xaimoe-audio explain --audio dataset/test/d.wav --ckpt runs/exp1/best.pt --out runs/exp1/explain
+
+---
+
+## What the user needs to provide (INPUT)
+
+Minimum required:
+- `dataset_dir`
+- `metadata.csv`
+- `task`: `single_label` or `multi_label`
+
+Recommended:
+- `budget`: `latency` or `accuracy`
+- `device`: `cuda` preferred
+
+Optional:
+- fixed target sampling rate
+- fixed frequency range
+- manual spectrogram kind (override auto-config)
+- manual N experts / Kmax
+- manual tiling size/stride
+
+---
+
+## What the library outputs (OUTPUT)
+
+During training, it saves:
+
+1) Model artifacts:
+- `best.pt`
+- `last.pt`
+
+2) Full reproducible configuration:
+- `run_config.json` (labels + policy + dataset profile)
+- `profile.json`
+- `policy.json`
+
+3) Architecture + routing reports:
+- `architecture.txt`
+- `expert_usage.json` (expert selection rates, K histogram, load balancing proxy)
+
+4) Metrics:
+- `metrics.json`
+- optional confusion matrix plots
+
+5) Explainability artifacts:
+- Grad-CAM overlays
+- router saliency maps
+- patch selection grids
+
+---
+
+## How Auto-config Works
+
+The library pipeline:
+
+1) profiles dataset:
+- fs_mode / fs_unique
+- effective band (fmin_eff / fmax_eff)
+- SNR proxy, flatness proxy, transient proxy, clipping proxy
+
+2) computes quality score Q and effective bandwidth
+
+3) selects spectrogram backend and parameters:
+- fs-respectful
+- (fmin, fmax) compatible with PSD proxy
+
+4) defines:
+- number of experts N
+- maximum K (Kmax)
+- tiling size / stride
+
+5) enables routing:
+- patches receive different expert budgets
+- low quality spectrogram -> fewer experts (avoid overfitting noise)
+- high quality + complex saliency -> more experts
+
+---
+
+## Expert Families (default ExpertBank)
+
+Default ExpertBank includes types such as:
+- NoiseRobust_Broadband
+- NoiseRobust_LowFreq
+- NoiseRobust_HighFreq
+- TransientExpert
+- HarmonicExpert
+- FineFreqExpert
+- MidbandGeneral
+- HighbandGeneral
+
+Routing masks experts that are incompatible with dataset conditions:
+- if `fmax_eff < 2000 Hz` -> disables highband experts
+- if `Q` is low -> disables fine-resolution experts
+- if transients dominate -> increases transient expert probability
+
+---
+
+## Roadmap
+
+- add PaSST / HTSAT / BEATs backbones (wrappers)
+- true top-k dispatch batched (speedup)
+- Grad-CAM distillation into a proxy router saliency model
+- Optuna-based auto-tuning (K/N/patch sizes)
+- FCWT/CQT backends
+
+---
+
+## Citation
+
+If you use this repo in academic work, cite:
+
+    @misc{xaimoeaudio2026,
+      title   = {XAI-MoE-Audio: XAI-driven Mixture-of-Experts for audio spectrogram classification},
+      author  = {Luis Paulo Guedes},
+      year    = {2026},
+      note    = {GitHub repository}
+    }
+
+---
+
+## License
+
+MIT License
+
